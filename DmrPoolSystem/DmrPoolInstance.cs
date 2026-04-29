@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace DmrPoolSystem
 {
-    public class DmrPoolInstance<T> where T : MonoBehaviour
+    public class DmrPoolInstance<T> : IDisposable where T : Component
     {
         private readonly Dictionary<GameObject, Stack<T>> _currentPool = new(25);
         private readonly Dictionary<GameObject, GameObject> _liveInstanceMap;
@@ -23,19 +23,30 @@ namespace DmrPoolSystem
 
         private Transform _mainParentTransform;
 
+        private Transform _setParentTransform;
+
+        private string _name;
+
         /// <param name="rememberBufferWarningSize">
         /// If pool object remember buffer is bigger than this value,
         /// it will do a null object scan to clean it and send a warning if sendWarning is true.
         /// liveInstanceMap capacity will be set to 0.5x rememberBufferWarningSize
         /// </param>
-        public DmrPoolInstance(string name = "DmrPoolSystem", bool dontDestroyOnLoad = false, int rememberBufferWarningSize = 500, bool sendWarning = true)
+        public DmrPoolInstance(string name = "DmrPoolSystem", bool dontDestroyOnLoad = false, int rememberBufferWarningSize = 500, bool sendWarning = true, Transform setParent = null)
         {
             _rememberBufferMaxSize = rememberBufferWarningSize;
             _sendWarning = sendWarning;
             _liveInstanceMap = new Dictionary<GameObject, GameObject>(Mathf.CeilToInt(0.5f * rememberBufferWarningSize));
             _activeObjects = new HashSet<GameObject>(Mathf.CeilToInt(0.5f * rememberBufferWarningSize));
+            _name = name;
 
             _mainParentTransform = new GameObject(name).transform;
+
+            if(setParent != null)
+            {
+                _setParentTransform = setParent;
+                _mainParentTransform.SetParent(_setParentTransform);
+            }
 
             if (dontDestroyOnLoad)
             {
@@ -65,7 +76,13 @@ namespace DmrPoolSystem
             if (_mainParentTransform == null)
             {
                 //DDOL is not activated but scene is changed
-                _mainParentTransform = new GameObject("DmrPoolSystem").transform;
+                _mainParentTransform = new GameObject(_name).transform;
+
+
+                if (_setParentTransform != null)
+                {
+                    _mainParentTransform.SetParent(_setParentTransform);
+                }
             }
 
             if (!isRegistered)
@@ -211,7 +228,12 @@ namespace DmrPoolSystem
             {
                 if (_mainParentTransform == null)
                 {
-                    _mainParentTransform = new GameObject("DmrPoolSystem").transform;
+                    _mainParentTransform = new GameObject(_name).transform;
+
+                    if (_setParentTransform != null)
+                    {
+                        _mainParentTransform.SetParent(_setParentTransform);
+                    }
                 }
 
                 GameObject instance = GameObject.Instantiate(prefab, _mainParentTransform, false);
@@ -310,6 +332,31 @@ namespace DmrPoolSystem
 
                 _currentPool.Remove(key);
             }
+        }
+        #endregion
+
+        #region Cleanup / IDisposable
+        public void Dispose()
+        {
+            if (_mainParentTransform != null)
+            {
+                GameObject.Destroy(_mainParentTransform.gameObject);
+                _mainParentTransform = null;
+            }
+
+
+            foreach (var liveObj in _liveInstanceMap.Keys.ToList())
+            {
+                if (liveObj != null)
+                {
+                    GameObject.Destroy(liveObj);
+                }
+            }
+
+            _currentPool.Clear();
+            _liveInstanceMap.Clear();
+            _activeObjects.Clear();
+            _listPool.Clear();
         }
         #endregion
     }
